@@ -1,0 +1,153 @@
+I’m building an AI Code Review Assistant web application on Replit using Node.js, with a backend (server.js) and a frontend to interact with an n8n workflow. The app lets users input a GitHub repository (e.g., LadybirdBrowser/ladybird), fetch open pull requests (PRs) from a webhook, display them in a table, trigger a review for a selected PR, and display the review from review.txt. The n8n workflow is hosted at https://6f36-2409-40c2-11a-446d-688f-c19d-502a-fee4.ngrok-free.app and provides two endpoints:
+
+GET /webhook-test/list-prs?repo=<repo_name>: Returns a JSON array of PRs with fields number, title, state, url, html_url (example output provided below).
+POST /webhook-test/github-webhook: Accepts { body: { pull_request: { url: "https://api.github.com/repos/<repo>/pulls/<prNumber>" } } } to trigger a review, which generates review.txt.
+The backend (server.js) is already set up with three endpoints:
+
+GET /api/prs?repo=<repo_name>: Proxies to the n8n /list-prs endpoint.
+POST /api/trigger: Sends the PR URL to the n8n /github-webhook endpoint.
+GET /api/review: Reads and returns review.txt.
+Goal: Create a frontend (HTML/JavaScript, no React unless necessary) in Replit that:
+
+Has an input field for the repo name and a “Fetch PRs” button.
+Displays PRs in a table with columns: PR Number, Title, State, Link (to html_url), and a “Generate Review” button.
+Triggers a review for a selected PR, sending a POST to /api/trigger.
+Displays the review from /api/review in a dedicated section.
+Includes basic CSS for a clean look.
+Ensures compatibility with Replit’s Node.js environment and can be downloaded to run locally on a Windows PC with Node.js.
+Context:
+
+The n8n workflow (List_PRs) returns PRs like:
+json
+
+Collapse
+
+Wrap
+
+Copy
+[
+  {
+    "number": 5318,
+    "title": "LibURL: Convert to scalar string before URL parsing",
+    "state": "open",
+    "url": "https://api.github.com/repos/LadybirdBrowser/ladybird/pulls/5318",
+    "html_url": "https://github.com/LadybirdBrowser/ladybird/pull/5318"
+  },
+  ...
+]
+The backend (server.js) is:
+javascript
+
+Collapse
+
+Wrap
+
+Run
+
+Copy
+const express = require('express');
+const axios = require('axios');
+const fs = require('fs').promises;
+const path = require('path');
+const app = express();
+
+app.use(express.json());
+app.use(express.static('public'));
+
+app.get('/api/prs', async (req, res) => {
+  const { repo } = req.query;
+  try {
+    const response = await axios.get(
+      `https://6f36-2409-40c2-11a-446d-688f-c19d-502a-fee4.ngrok-free.app/webhook-test/list-prs?repo=${repo}`,
+      { headers: { 'User-Agent': 'n8n-workflow', 'ngrok-skip-browser-warning': 'true' } }
+    );
+    res.json(response.data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/trigger', async (req, res) => {
+  const { repo, prNumber } = req.body;
+  const prUrl = `https://api.github.com/repos/${repo}/pulls/${prNumber}`;
+  try {
+    await axios.post(
+      'https://6f36-2409-40c2-11a-446d-688f-c19d-502a-fee4.ngrok-free.app/webhook-test/github-webhook',
+      { body: { pull_request: { url: prUrl } } },
+      { headers: { 'User-Agent': 'n8n-workflow', 'ngrok-skip-browser-warning': 'true' } }
+    );
+    res.json({ message: 'Review triggered' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/review', async (req, res) => {
+  try {
+    const review = await fs.readFile('review.txt', 'utf8');
+    res.json({ review });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to read review.txt' });
+  }
+});
+
+app.listen(3000, () => console.log('Server running on port 3000'));
+The project directory is:
+text
+
+Collapse
+
+Wrap
+
+Copy
+ai-code-review-assistant/
+├── src/
+│   ├── workflow/
+│   │   ├── list_prs_workflow.json
+│   │   ├── github_webhook_workflow.json
+│   ├── code_review.py
+│   ├── logs/
+│   │   ├── pr_logs.json
+├── public/
+│   ├── index.html (to be created)
+├── server.js
+├── review.txt
+├── package.json
+package.json:
+json
+
+Collapse
+
+Wrap
+
+Copy
+{
+  "dependencies": {
+    "express": "^4.17.1",
+    "axios": "^1.4.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "build": "echo 'No build step required'"
+  }
+}
+Requirements:
+
+Create public/index.html with:
+Input field for repo name (e.g., LadybirdBrowser/ladybird).
+“Fetch PRs” button to call /api/prs?repo=<input>.
+Table to display PRs with columns: Number, Title, State, Link, Action (Generate Review button).
+Section to display review.txt content from /api/review.
+Basic CSS for a clean, responsive design.
+JavaScript to handle fetching PRs, triggering reviews, and displaying reviews with error handling.
+Ensure the app works in Replit’s Node.js environment.
+Provide instructions to download the project and run it locally on Windows with Node.js.
+Handle GitHub API rate limits by supporting a token in server.js (optional header: Authorization: Bearer your-token).
+Ensure the frontend is simple (plain HTML/JS/CSS, no frameworks unless necessary).
+After generating a review, poll /api/review every 5 seconds until the review appears.
+Deliverables:
+
+public/index.html with HTML, CSS, and JavaScript.
+Updated server.js (if needed) to support the frontend.
+Instructions for running in Replit and downloading/running locally on Windows.
+Ensure compatibility with the n8n webhook and existing backend.
