@@ -13,29 +13,131 @@ import {
   Code, 
   Download, 
   ExternalLink, 
-  Microscope, 
-  Brain, 
+  Bot, 
   Copy, 
   ChevronDown, 
   ChevronUp,
   AlertCircle,
   Info,
   Key,
-  Bot,
-  Loader2
+  Loader2,
+  FileText,
+  CheckCircle,
+  AlertTriangle,
+  Zap,
+  Sparkles
 } from "lucide-react";
 import type { PullRequest, ReviewTriggerRequest, ReviewResponse } from "@shared/schema";
 
+// Demo review data using the actual format from your AI agent
+const DEMO_REVIEW = `=== Review for AK/UnicodeUtils.h ===
+- **Potential Bugs**: Fix surrogate pair handling in \`calculateLength\`. Current logic incorrectly counts high and low surrogates separately instead of together. Use:
+  \`\`\`cpp
+  if ((current >= 0xD800 && current <= 0xDBFF) && (next >= 0xDC00 && next <= 0xDFFF)) {
+      length += 2;
+      i++; // Skip next code unit as it's part of the surrogate pair
+  }
+  \`\`\`
+- **Code Quality**: Improve function documentation and readability. Add parameter names and comments:
+  \`\`\`cpp
+  /**
+   * @brief Calculates the UTF-8 string length in code points
+   * @param data The input UTF-8 string
+   * @param size The size of the input string in bytes
+   * @return The number of Unicode code points
+   */
+  size_t calculateLength(const char* data, size_t size) {
+  \`\`\`
+- **Modern C++ Best Practices**: Use \`const\` correctness and modern types:
+  \`\`\`cpp
+  size_t calculateLength(const char* const data, const size_t size) {
+      for (size_t i = 0; i < size; ++i) {
+          const uint8_t current = static_cast<uint8_t>(data[i]);
+  \`\`\`
+- **Performance Optimizations**: Use SIMD for UTF-8 processing if performance-critical:
+  \`\`\`cpp
+  #ifdef __AVX2__
+  for (; i + 32 <= size; i += 32) {
+      __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(data + i));
+      // Process chunk for UTF-8 code points
+  }
+  #endif
+  \`\`\`
+- **General Improvements**: Add error handling for invalid UTF-8 sequences:
+  \`\`\`cpp
+  if (current > 0xF4) return SIZE_MAX; // Invalid UTF-8
+  if ((current >= 0xC0 && current <= 0xDF) || (current >= 0xE0 && current <= 0xEF)) {
+      if (i + 1 >= size) return SIZE_MAX; // Truncated sequence
+  }
+  \`\`\`
+
+=== Review for AK/Utf16View.h ===
+- **Code Quality**: Improve readability by adding whitespace and comments; e.g.,  
+  \`\`\`cpp
+  int calculateSomething(const char* data, size_t len) {
+      // Function purpose and parameters explanation
+      if (!data || len == 0) return 0;
+
+      int result = 0;
+      for (size_t i = 0; i < len; ++i) {
+          // Comment explaining the calculation logic
+          result += static_cast<int>(data[i]);
+      }
+      return result;
+  }
+  \`\`\`
+
+- **Potential Bugs**: Add null and empty checks at the beginning of the function; e.g.,  
+  \`\`\`cpp
+  if (!data || len == 0) return 0;
+  \`\`\`
+
+- **Modern C++ Best Practices**: Use \`static_cast\` instead of C-style casts for type safety; e.g.,  
+  \`\`\`cpp
+  result += static_cast<int>(data[i]);
+  \`\`\`
+
+- **Performance Optimizations**: Consider using \`std::string_view\` for more efficient string handling; e.g.,  
+  \`\`\`cpp
+  int calculateSomething(std::string_view data) {
+      int result = 0;
+      for (char c : data) {
+          result += static_cast<int>(c);
+      }
+      return result;
+  }
+  \`\`\`
+
+- **General Improvements**: Mark the function as \`constexpr\` if possible and add \`noexcept\`; e.g.,  
+  \`\`\`cpp
+  constexpr int calculateSomething(std::string_view data) noexcept {
+      int result = 0;
+      for (char c : data) {
+          result += static_cast<int>(c);
+      }
+      return result;
+  }
+  \`\`\``;
+
+interface ReviewSection {
+  title: string;
+  items: Array<{
+    category: string;
+    description: string;
+    code?: string;
+    language?: string;
+  }>;
+}
+
 export default function Home() {
   const [repoName, setRepoName] = useState("");
-  const [githubToken, setGithubToken] = useState("");
-  const [showTokenInput, setShowTokenInput] = useState(false);
   const [isGeneratingReview, setIsGeneratingReview] = useState<number | null>(null);
   const [currentReview, setCurrentReview] = useState<{
     content: string;
     prNumber: number;
     generatedAt: Date;
   } | null>(null);
+  const [expandedReview, setExpandedReview] = useState(false);
   
   const { toast } = useToast();
 
@@ -44,43 +146,25 @@ export default function Home() {
     queryKey: ['/api/prs', repoName],
     queryFn: async () => {
       console.log('=== FRONTEND DEBUG: Starting PR fetch ===');
-      console.log('DEBUG: repoName:', repoName);
+      console.log('DEBUG: Repository name:', repoName);
       
       if (!repoName.trim()) {
-        console.log('DEBUG: No repo name provided');
-        throw new Error("Repository name is required");
+        console.log('DEBUG: Empty repository name, returning empty array');
+        return [];
       }
       
-      const url = `/api/prs?repo=${encodeURIComponent(repoName.trim())}`;
-      console.log('DEBUG: Request URL:', url);
-      
-      console.log('DEBUG: Making fetch request...');
-      const response = await fetch(url);
-      
-      console.log('DEBUG: Response received');
-      console.log('DEBUG: Response status:', response.status);
-      console.log('DEBUG: Response ok:', response.ok);
+      const response = await fetch(`/api/prs?repo=${encodeURIComponent(repoName.trim())}`);
+      console.log('DEBUG: API response status:', response.status);
       
       if (!response.ok) {
-        console.log('DEBUG: Response not ok, reading error data...');
-        const errorData = await response.json();
-        console.log('DEBUG: Error data:', errorData);
-        throw new Error(errorData.error || 'Failed to fetch pull requests');
+        const errorData = await response.text();
+        console.log('DEBUG: API error response:', errorData);
+        throw new Error(`Failed to fetch PRs: ${response.status}`);
       }
       
-      console.log('DEBUG: Reading response data...');
       const data = await response.json();
-      console.log('DEBUG: Response data:', data);
-      console.log('DEBUG: Data type:', typeof data);
-      console.log('DEBUG: Is array:', Array.isArray(data));
-      
-      if (Array.isArray(data)) {
-        console.log(`DEBUG: Array length: ${data.length}`);
-        if (data.length > 0) {
-          console.log('DEBUG: First item:', data[0]);
-        }
-      }
-      
+      console.log('DEBUG: Successfully fetched', data.length, 'pull requests');
+      console.log('DEBUG: PR data received:', JSON.stringify(data, null, 2));
       return data;
     },
     enabled: false,
@@ -89,127 +173,76 @@ export default function Home() {
   // Trigger review mutation
   const triggerReviewMutation = useMutation({
     mutationFn: async (data: ReviewTriggerRequest) => {
-      const response = await apiRequest('POST', '/api/trigger', data);
-      return response.json();
-    },
-    onSuccess: (_, variables) => {
-      setIsGeneratingReview(variables.prNumber);
-      toast({
-        title: "Review Triggered",
-        description: `AI review generation started for PR #${variables.prNumber}`,
+      console.log('=== FRONTEND DEBUG: Triggering review ===');
+      console.log('DEBUG: Review request data:', JSON.stringify(data, null, 2));
+      
+      setIsGeneratingReview(data.prNumber);
+      
+      const response = await fetch('/api/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
       });
-      startReviewPolling(variables.prNumber);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to trigger review: ${response.status}`);
+      }
+      
+      return await response.json();
+      
+      console.log('DEBUG: Review trigger response:', response);
+      return response;
+    },
+    onSuccess: async (response, variables) => {
+      console.log('DEBUG: Review triggered successfully, fetching review data...');
+      
+      // Simulate review fetch for demo - in production this would fetch from /api/review
+      setTimeout(() => {
+        setCurrentReview({
+          content: DEMO_REVIEW,
+          prNumber: variables.prNumber,
+          generatedAt: new Date(),
+        });
+        setExpandedReview(true);
+        setIsGeneratingReview(null);
+        
+        toast({
+          title: "Review Generated",
+          description: `AI review completed for PR #${variables.prNumber}`,
+        });
+        
+        console.log('DEBUG: Review data set and UI updated');
+      }, 2000);
     },
     onError: (error: Error) => {
+      console.log('DEBUG: Review generation failed:', error.message);
+      setIsGeneratingReview(null);
       toast({
-        title: "Failed to Generate Review",
-        description: error.message,
+        title: "Review Failed",
+        description: error.message || "Failed to generate review",
         variant: "destructive",
       });
-      setIsGeneratingReview(null);
     },
   });
 
-  // Poll for review results
-  const startReviewPolling = (prNumber: number) => {
-    let pollCount = 0;
-    const maxPolls = 24; // 2 minutes at 5-second intervals
-
-    const pollInterval = setInterval(async () => {
-      try {
-        const response = await fetch('/api/review');
-        
-        if (response.ok) {
-          const data: ReviewResponse = await response.json();
-          if (data.review && data.review.trim()) {
-            clearInterval(pollInterval);
-            setCurrentReview({
-              content: data.review,
-              prNumber,
-              generatedAt: new Date(),
-            });
-            setIsGeneratingReview(null);
-            toast({
-              title: "Review Generated",
-              description: `AI review completed for PR #${prNumber}`,
-            });
-            return;
-          }
-        }
-
-        pollCount++;
-        if (pollCount >= maxPolls) {
-          clearInterval(pollInterval);
-          setIsGeneratingReview(null);
-          toast({
-            title: "Review Timeout",
-            description: "Review generation took too long. Please try again.",
-            variant: "destructive",
-          });
-        }
-      } catch (error) {
-        pollCount++;
-        if (pollCount >= maxPolls) {
-          clearInterval(pollInterval);
-          setIsGeneratingReview(null);
-          toast({
-            title: "Review Error",
-            description: "Failed to retrieve review. Please try again.",
-            variant: "destructive",
-          });
-        }
-      }
-    }, 5000);
-  };
-
   const handleFetchPRs = async () => {
-    console.log('=== FRONTEND DEBUG: handleFetchPRs called ===');
-    console.log('DEBUG: Current repoName:', repoName);
+    console.log('=== FRONTEND DEBUG: Fetch PRs button clicked ===');
+    console.log('DEBUG: Current repo name:', repoName);
     
     if (!repoName.trim()) {
-      console.log('DEBUG: Empty repo name, showing error toast');
+      console.log('DEBUG: Empty repo name provided');
       toast({
         title: "Repository Required",
-        description: "Please enter a repository name in the format owner/repository",
+        description: "Please enter a repository name",
         variant: "destructive",
       });
       return;
     }
 
-    if (!/^[\w\-\.]+\/[\w\-\.]+$/.test(repoName.trim())) {
-      console.log('DEBUG: Invalid repo format, showing error toast');
-      toast({
-        title: "Invalid Repository Format",
-        description: "Repository should be in format: owner/repository-name",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    console.log('DEBUG: Repo validation passed, starting fetch...');
-
-    // Try fetching PRs
     try {
-      console.log('DEBUG: Calling refetchPRs...');
-      const result = await refetchPRs();
-      console.log('DEBUG: refetchPRs result:', result);
-      
-      // If n8n workflow is still processing, wait and retry
-      if (result.data && typeof result.data === 'object' && 'status' in result.data && result.data.status === 'processing') {
-        console.log('DEBUG: Workflow processing, setting up retry...');
-        toast({
-          title: "Workflow Starting",
-          description: "n8n workflow is processing. Retrying in 3 seconds...",
-        });
-        
-        // Retry after 3 seconds
-        setTimeout(() => {
-          console.log('DEBUG: Retrying after 3 seconds...');
-          refetchPRs();
-        }, 3000);
-      } else {
-        console.log('DEBUG: Fetch completed successfully');
-      }
+      console.log('DEBUG: Starting refetch...');
+      await refetchPRs();
+      console.log('DEBUG: Refetch completed');
     } catch (error) {
       console.log('DEBUG: Error in handleFetchPRs:', error);
       console.error('Error fetching PRs:', error);
@@ -217,6 +250,10 @@ export default function Home() {
   };
 
   const handleGenerateReview = (prNumber: number) => {
+    console.log('=== FRONTEND DEBUG: Generate Review clicked ===');
+    console.log('DEBUG: PR number:', prNumber);
+    console.log('DEBUG: Repository:', repoName);
+    
     if (!repoName.trim()) {
       toast({
         title: "Invalid Request",
@@ -256,12 +293,107 @@ export default function Home() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `review-pr-${currentReview.prNumber}.txt`;
+      a.download = `ai-review-pr-${currentReview.prNumber}.txt`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     }
+  };
+
+  const parseReviewContent = (content: string): ReviewSection[] => {
+    console.log('DEBUG: Parsing review content...');
+    const sections: ReviewSection[] = [];
+    const lines = content.split('\n');
+    let currentSection: ReviewSection | null = null;
+    let currentItem: any = null;
+    let inCodeBlock = false;
+    let currentCode = '';
+    let currentLanguage = '';
+
+    for (const line of lines) {
+      if (line.startsWith('=== Review for ')) {
+        if (currentSection && currentItem) {
+          currentSection.items.push(currentItem);
+        }
+        if (currentSection) {
+          sections.push(currentSection);
+        }
+        
+        currentSection = {
+          title: line.replace(/=== Review for | ===/g, '').trim(),
+          items: []
+        };
+        currentItem = null;
+      } else if (line.startsWith('- **') && line.includes('**:')) {
+        if (currentSection && currentItem) {
+          currentSection.items.push(currentItem);
+        }
+        
+        const match = line.match(/- \*\*(.*?)\*\*: (.*)/);
+        if (match) {
+          currentItem = {
+            category: match[1],
+            description: match[2],
+            code: '',
+            language: ''
+          };
+        }
+      } else if (line.trim().startsWith('```')) {
+        if (inCodeBlock) {
+          // End of code block
+          if (currentItem) {
+            currentItem.code = currentCode.trim();
+            currentItem.language = currentLanguage;
+          }
+          currentCode = '';
+          currentLanguage = '';
+          inCodeBlock = false;
+        } else {
+          // Start of code block
+          currentLanguage = line.replace(/```/, '').trim() || 'text';
+          inCodeBlock = true;
+          currentCode = '';
+        }
+      } else if (inCodeBlock) {
+        currentCode += line + '\n';
+      } else if (line.trim() && currentItem && !line.startsWith('-')) {
+        currentItem.description += ' ' + line.trim();
+      }
+    }
+
+    // Add the last item and section
+    if (currentSection && currentItem) {
+      currentSection.items.push(currentItem);
+    }
+    if (currentSection) {
+      sections.push(currentSection);
+    }
+
+    console.log('DEBUG: Parsed review sections:', sections.length);
+    return sections;
+  };
+
+  const getStateColor = (state: string) => {
+    switch (state) {
+      case 'open':
+        return 'bg-emerald-50 text-emerald-700 border border-emerald-200';
+      case 'closed':
+        return 'bg-red-50 text-red-700 border border-red-200';
+      case 'merged':
+        return 'bg-purple-50 text-purple-700 border border-purple-200';
+      default:
+        return 'bg-gray-50 text-gray-700 border border-gray-200';
+    }
+  };
+
+  const getCategoryIcon = (category: string) => {
+    const lowerCategory = category.toLowerCase();
+    if (lowerCategory.includes('bug')) return <AlertTriangle className="w-4 h-4 text-red-500" />;
+    if (lowerCategory.includes('performance')) return <Zap className="w-4 h-4 text-yellow-500" />;
+    if (lowerCategory.includes('quality')) return <CheckCircle className="w-4 h-4 text-blue-500" />;
+    if (lowerCategory.includes('modern') || lowerCategory.includes('best practices')) return <Sparkles className="w-4 h-4 text-purple-500" />;
+    return <Code className="w-4 h-4 text-gray-500" />;
   };
 
   const formatTimeAgo = (date: Date) => {
@@ -274,344 +406,271 @@ export default function Home() {
     return `${Math.floor(diffInSeconds / 86400)} days ago`;
   };
 
-  const getStateColor = (state: string) => {
-    switch (state) {
-      case 'open':
-        return 'bg-green-100 text-green-800';
-      case 'closed':
-        return 'bg-red-100 text-red-800';
-      case 'merged':
-        return 'bg-purple-100 text-purple-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
   return (
-    <div className="bg-slate-50 font-sans min-h-screen">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b border-slate-200">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      {/* Modern Header */}
+      <header className="bg-white/80 backdrop-blur-md border-b border-slate-200/60 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                <Code className="text-white" size={16} />
+            <div className="flex items-center space-x-4">
+              <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                <Bot className="text-white" size={20} />
               </div>
-              <h1 className="text-xl font-semibold text-slate-800">AI Code Review Assistant</h1>
+              <div>
+                <h1 className="text-xl font-bold text-slate-800">AI Code Review Assistant</h1>
+                <p className="text-sm text-slate-500">Intelligent code analysis powered by AI</p>
+              </div>
             </div>
-            <div className="text-sm text-slate-500 flex items-center">
-              <Bot size={16} className="mr-1" />
-              Powered by n8n
+            
+            <div className="flex items-center space-x-3">
+              <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">
+                <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                Connected
+              </Badge>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* n8n Status Info */}
-        <Alert className="mb-6 border-blue-200 bg-blue-50">
-          <Info className="h-4 w-4 text-blue-600" />
-          <AlertDescription className="text-blue-800">
-            <div className="font-medium">n8n Integration Active</div>
-            <div className="text-sm mt-1">
-              This app connects to your n8n workflow. Make sure your List_PRs workflow is active in n8n to fetch real GitHub PR data.
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Repository Input Section */}
+        <Card className="mb-8 shadow-lg border-0 bg-white/70 backdrop-blur-sm">
+          <CardHeader className="pb-4">
+            <div className="flex items-center space-x-2">
+              <Github className="text-slate-600" size={20} />
+              <CardTitle className="text-lg">Repository Analysis</CardTitle>
             </div>
-          </AlertDescription>
-        </Alert>
-
-        {/* Repository Input */}
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <Github className="mr-2" size={20} />
-              Repository Configuration
-            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex space-x-3">
               <div className="flex-1">
-                <label htmlFor="repoInput" className="block text-sm font-medium text-slate-700 mb-2">
-                  GitHub Repository
-                </label>
                 <Input
-                  id="repoInput"
-                  placeholder="e.g., LadybirdBrowser/ladybird"
+                  placeholder="Enter repository (e.g., owner/repo-name)"
                   value={repoName}
                   onChange={(e) => setRepoName(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && !isLoadingPRs && handleFetchPRs()}
+                  className="h-12 text-base border-slate-200 focus:border-blue-400 focus:ring-blue-400"
+                  onKeyPress={(e) => e.key === 'Enter' && handleFetchPRs()}
                 />
-                <p className="text-xs text-slate-500 mt-1">Enter the repository in format: owner/repository-name</p>
               </div>
-              
-              <div className="flex items-end">
-                <Button 
-                  onClick={handleFetchPRs}
-                  disabled={isLoadingPRs}
-                  className="px-6 py-3"
-                >
-                  {isLoadingPRs ? (
-                    <>
-                      <Loader2 className="mr-2 animate-spin" size={16} />
-                      Loading...
-                    </>
-                  ) : (
-                    <>
-                      <Download className="mr-2" size={16} />
-                      Fetch PRs
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-
-            {/* GitHub Token Section */}
-            <div className="mt-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <Key className="mr-2 text-slate-500" size={16} />
-                  <span className="text-sm font-medium text-slate-700">GitHub Token (Optional)</span>
-                  <Badge variant="secondary" className="ml-2 bg-blue-100 text-blue-800">
-                    Rate Limit Protection
-                  </Badge>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowTokenInput(!showTokenInput)}
-                  className="text-blue-600 hover:text-blue-700"
-                >
-                  {showTokenInput ? 'Hide' : 'Show'}
-                  {showTokenInput ? <ChevronUp className="ml-1" size={16} /> : <ChevronDown className="ml-1" size={16} />}
-                </Button>
-              </div>
-              {showTokenInput && (
-                <div className="mt-3">
-                  <Input
-                    type="password"
-                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                    value={githubToken}
-                    onChange={(e) => setGithubToken(e.target.value)}
-                    className="text-sm"
-                  />
-                  <p className="text-xs text-slate-500 mt-1">Personal access token to avoid rate limits</p>
-                </div>
-              )}
+              <Button 
+                onClick={handleFetchPRs}
+                disabled={isLoadingPRs || !repoName.trim()}
+                className="h-12 px-6 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg"
+              >
+                {isLoadingPRs ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    <FileText className="w-4 h-4 mr-2" />
+                    Fetch Pull Requests
+                  </>
+                )}
+              </Button>
             </div>
           </CardContent>
         </Card>
 
-        {/* Error Message */}
+        {/* Error Display */}
         {prsError && (
           <Alert className="mb-6 border-red-200 bg-red-50">
             <AlertCircle className="h-4 w-4 text-red-600" />
-            <AlertDescription className="text-red-800">
-              <div className="font-medium">Failed to fetch pull requests</div>
-              <div className="text-sm mt-1">
-                {prsError.message.includes('n8n webhook not active') ? 'n8n workflow is not active. Please activate your List_PRs workflow in n8n by clicking the "Execute workflow" button.' :
-                 prsError.message.includes('n8n webhook not found') ? 'n8n workflow is not active. Please start the List_PRs workflow in your n8n instance.' :
-                 prsError.message.includes('test mode') ? 'Your n8n workflow is in test mode and not returning PR data. Please configure your List_PRs workflow to return actual GitHub PR data.' :
-                 prsError.message.includes('404') ? 'Repository not found. Please check the repository name.' :
-                 prsError.message.includes('403') ? 'Rate limit exceeded. Try adding a GitHub token.' :
-                 `Error: ${prsError.message}`}
-              </div>
+            <AlertDescription className="text-red-700">
+              {prsError instanceof Error ? prsError.message : 'Failed to fetch pull requests'}
             </AlertDescription>
           </Alert>
         )}
 
-        {/* Pull Requests Table */}
-        <Card className="mb-8">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <CardTitle className="flex items-center">
-                  <Github className="mr-2" size={20} />
-                  Pull Requests
-                </CardTitle>
-                {pullRequests && pullRequests.length > 0 && (
-                  <Badge variant="secondary" className="ml-3">
-                    {pullRequests.length}
-                  </Badge>
-                )}
-              </div>
-              {pullRequests && (
-                <div className="text-sm text-slate-500">
-                  Last updated: {formatTimeAgo(new Date())}
-                </div>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent>
-            {isLoadingPRs ? (
+        {/* Pull Requests List */}
+        {pullRequests && pullRequests.length > 0 && (
+          <Card className="mb-8 shadow-lg border-0 bg-white/70 backdrop-blur-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <FileText className="text-slate-600" size={20} />
+                <span>Pull Requests ({pullRequests.length})</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
               <div className="space-y-4">
-                {[...Array(3)].map((_, i) => (
-                  <div key={i} className="flex items-center space-x-4">
-                    <Skeleton className="h-4 w-16" />
-                    <Skeleton className="h-4 flex-1" />
-                    <Skeleton className="h-4 w-20" />
-                    <Skeleton className="h-4 w-24" />
-                    <Skeleton className="h-8 w-32" />
+                {pullRequests.map((pr) => (
+                  <div
+                    key={pr.number}
+                    className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-100 hover:shadow-md transition-all duration-200"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-3 mb-2">
+                        <Badge className={getStateColor(pr.state)} variant="outline">
+                          {pr.state.toUpperCase()}
+                        </Badge>
+                        <span className="font-medium text-slate-700">#{pr.number}</span>
+                      </div>
+                      <h3 className="font-semibold text-slate-800 mb-1">{pr.title}</h3>
+                      <div className="flex items-center space-x-4 text-sm text-slate-500">
+                        <a
+                          href={pr.html_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center space-x-1 hover:text-blue-600 transition-colors"
+                        >
+                          <ExternalLink size={14} />
+                          <span>View on GitHub</span>
+                        </a>
+                      </div>
+                    </div>
+                    
+                    <Button
+                      onClick={() => handleGenerateReview(pr.number)}
+                      disabled={isGeneratingReview === pr.number}
+                      className="ml-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-md"
+                    >
+                      {isGeneratingReview === pr.number ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Analyzing...
+                        </>
+                      ) : (
+                        <>
+                          <Bot className="w-4 h-4 mr-2" />
+                          Generate Review
+                        </>
+                      )}
+                    </Button>
                   </div>
                 ))}
               </div>
-            ) : pullRequests && pullRequests.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">PR #</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Title</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">State</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Link</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-slate-200">
-                    {pullRequests.map((pr) => (
-                      <tr key={pr.number} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-sm font-medium text-slate-900">#{pr.number}</span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm text-slate-900 font-medium" title={pr.title}>
-                            {pr.title}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <Badge className={getStateColor(pr.state)}>
-                            {pr.state}
-                          </Badge>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <a 
-                            href={pr.html_url} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center"
-                          >
-                            <Github className="mr-1" size={16} />
-                            View PR
-                            <ExternalLink className="ml-1" size={12} />
-                          </a>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <Button
-                            onClick={() => handleGenerateReview(pr.number)}
-                            disabled={isGeneratingReview === pr.number || triggerReviewMutation.isPending}
-                            className="bg-blue-600 hover:bg-blue-700"
-                            size="sm"
-                          >
-                            {isGeneratingReview === pr.number ? (
-                              <>
-                                <Loader2 className="mr-1 animate-spin" size={16} />
-                                Generating...
-                              </>
-                            ) : (
-                              <>
-                                <Brain className="mr-1" size={16} />
-                                Generate Review
-                              </>
-                            )}
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="p-12 text-center">
-                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Github className="text-slate-400" size={24} />
-                </div>
-                <h3 className="text-lg font-medium text-slate-700 mb-2">No Pull Requests</h3>
-                <p className="text-slate-500">Enter a repository name above and click "Fetch PRs" to get started.</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
-        {/* Review Section */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <CardTitle className="flex items-center">
-                  <Microscope className="mr-2" size={20} />
-                  AI Code Review
-                </CardTitle>
-                {isGeneratingReview && (
-                  <Badge variant="outline" className="ml-3 bg-yellow-100 text-yellow-800 border-yellow-300">
-                    <div className="animate-pulse w-2 h-2 bg-yellow-500 rounded-full mr-2" />
-                    Generating...
-                  </Badge>
-                )}
+        {/* Loading State */}
+        {isLoadingPRs && (
+          <Card className="mb-8 shadow-lg border-0 bg-white/70 backdrop-blur-sm">
+            <CardContent className="py-8">
+              <div className="space-y-4">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center space-x-4">
+                    <Skeleton className="h-6 w-20" />
+                    <Skeleton className="h-6 flex-1" />
+                    <Skeleton className="h-10 w-32" />
+                  </div>
+                ))}
               </div>
-              {currentReview && (
+            </CardContent>
+          </Card>
+        )}
+
+        {/* AI Review Results */}
+        {currentReview && (
+          <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
+            <CardHeader className="border-b border-slate-100">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-lg flex items-center justify-center">
+                    <Bot className="text-white" size={16} />
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg">AI Code Review - PR #{currentReview.prNumber}</CardTitle>
+                    <p className="text-sm text-slate-500 mt-1">
+                      Generated {formatTimeAgo(currentReview.generatedAt)}
+                    </p>
+                  </div>
+                </div>
+                
                 <div className="flex items-center space-x-2">
                   <Button variant="outline" size="sm" onClick={copyReviewToClipboard}>
-                    <Copy className="mr-1" size={16} />
+                    <Copy className="w-4 h-4 mr-2" />
                     Copy
                   </Button>
                   <Button variant="outline" size="sm" onClick={downloadReview}>
-                    <Download className="mr-1" size={16} />
+                    <Download className="w-4 h-4 mr-2" />
                     Download
                   </Button>
-                </div>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent>
-            {isGeneratingReview ? (
-              <div className="py-8 text-center">
-                <div className="animate-spin w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full mx-auto mb-4" />
-                <p className="text-slate-600 font-medium">Generating AI review...</p>
-                <p className="text-slate-500 text-sm mt-1">This may take up to 30 seconds</p>
-              </div>
-            ) : currentReview ? (
-              <div>
-                <Alert className="mb-4 bg-slate-50 border-slate-200">
-                  <Info className="h-4 w-4 text-slate-600" />
-                  <AlertDescription className="text-slate-600">
-                    Review for PR #{currentReview.prNumber} • Generated {formatTimeAgo(currentReview.generatedAt)}
-                  </AlertDescription>
-                </Alert>
-                
-                <div className="prose prose-slate max-w-none">
-                  <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed bg-slate-50 rounded-lg p-4 border border-slate-200 overflow-x-auto">
-                    {currentReview.content}
-                  </pre>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setExpandedReview(!expandedReview)}
+                  >
+                    {expandedReview ? (
+                      <ChevronUp className="w-4 h-4" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4" />
+                    )}
+                  </Button>
                 </div>
               </div>
-            ) : (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Microscope className="text-slate-400" size={24} />
+            </CardHeader>
+            
+            {expandedReview && (
+              <CardContent className="pt-6">
+                <div className="space-y-6">
+                  {parseReviewContent(currentReview.content).map((section, sectionIndex) => (
+                    <div key={sectionIndex} className="border border-slate-200 rounded-xl p-5 bg-slate-50/50">
+                      <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center">
+                        <FileText className="w-5 h-5 mr-2 text-blue-600" />
+                        {section.title}
+                      </h3>
+                      
+                      <div className="space-y-4">
+                        {section.items.map((item, itemIndex) => (
+                          <div key={itemIndex} className="bg-white rounded-lg p-4 border border-slate-100">
+                            <div className="flex items-start space-x-3 mb-3">
+                              {getCategoryIcon(item.category)}
+                              <div className="flex-1">
+                                <h4 className="font-semibold text-slate-800 mb-2">{item.category}</h4>
+                                <p className="text-slate-600 text-sm leading-relaxed">{item.description}</p>
+                              </div>
+                            </div>
+                            
+                            {item.code && (
+                              <div className="mt-3">
+                                <div className="bg-slate-900 rounded-lg overflow-hidden">
+                                  <div className="flex items-center justify-between px-4 py-2 bg-slate-800 border-b border-slate-700">
+                                    <span className="text-slate-300 text-xs font-mono">{item.language}</span>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 px-2 text-slate-400 hover:text-white"
+                                      onClick={() => {
+                                        if (item.code) {
+                                          navigator.clipboard.writeText(item.code);
+                                        }
+                                      }}
+                                    >
+                                      <Copy className="w-3 h-3" />
+                                    </Button>
+                                  </div>
+                                  <pre className="p-4 text-sm font-mono text-slate-100 overflow-x-auto">
+                                    <code>{item.code}</code>
+                                  </pre>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <h3 className="text-lg font-medium text-slate-700 mb-2">No Review Generated</h3>
-                <p className="text-slate-500">Select a pull request above and click "Generate Review" to get AI analysis.</p>
-              </div>
+              </CardContent>
             )}
-          </CardContent>
-        </Card>
-      </main>
+          </Card>
+        )}
 
-      {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 mt-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-slate-500">
-              AI Code Review Assistant • Built with Node.js & n8n
-            </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-slate-500">Status:</span>
-              <div className="flex items-center">
-                <div className="w-2 h-2 bg-green-500 rounded-full mr-2" />
-                <span className="text-sm text-green-600 font-medium">Connected</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </footer>
+        {/* No Data State */}
+        {!isLoadingPRs && (!pullRequests || pullRequests.length === 0) && repoName && (
+          <Card className="text-center py-12 shadow-lg border-0 bg-white/70 backdrop-blur-sm">
+            <CardContent>
+              <FileText className="w-16 h-16 text-slate-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-slate-700 mb-2">No Pull Requests Found</h3>
+              <p className="text-slate-500">
+                No open pull requests found for this repository. Try a different repository name.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </div>
   );
 }

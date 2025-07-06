@@ -1,0 +1,89 @@
+
+=== Review for AK/UnicodeUtils.h ===
+- **Potential Bugs**: Fix surrogate pair handling in `calculateLength`. Current logic incorrectly counts high and low surrogates separately instead of together. Use:
+  ```cpp
+  if ((current >= 0xD800 && current <= 0xDBFF) && (next >= 0xDC00 && next <= 0xDFFF)) {
+      length += 2;
+      i++; // Skip next code unit as it's part of the surrogate pair
+  }
+  ```
+- **Code Quality**: Improve function documentation and readability. Add parameter names and comments:
+  ```cpp
+  /**
+   * @brief Calculates the UTF-8 string length in code points
+   * @param data The input UTF-8 string
+   * @param size The size of the input string in bytes
+   * @return The number of Unicode code points
+   */
+  size_t calculateLength(const char* data, size_t size) {
+  ```
+- **Modern C++ Best Practices**: Use `const` correctness and modern types:
+  ```cpp
+  size_t calculateLength(const char* const data, const size_t size) {
+      for (size_t i = 0; i < size; ++i) {
+          const uint8_t current = static_cast<uint8_t>(data[i]);
+  ```
+- **Performance Optimizations**: Use SIMD for UTF-8 processing if performance-critical:
+  ```cpp
+  #ifdef __AVX2__
+  for (; i + 32 <= size; i += 32) {
+      __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(data + i));
+      // Process chunk for UTF-8 code points
+  }
+  #endif
+  ```
+- **General Improvements**: Add error handling for invalid UTF-8 sequences:
+  ```cpp
+  if (current > 0xF4) return SIZE_MAX; // Invalid UTF-8
+  if ((current >= 0xC0 && current <= 0xDF) || (current >= 0xE0 && current <= 0xEF)) {
+      if (i + 1 >= size) return SIZE_MAX; // Truncated sequence
+  }
+  ```
+
+=== Review for AK/Utf16View.h ===
+- **Code Quality**: Improve readability by adding whitespace and comments; e.g.,  
+  ```cpp
+  int calculateSomething(const char* data, size_t len) {
+      // Function purpose and parameters explanation
+      if (!data || len == 0) return 0;
+
+      int result = 0;
+      for (size_t i = 0; i < len; ++i) {
+          // Comment explaining the calculation logic
+          result += static_cast<int>(data[i]);
+      }
+      return result;
+  }
+  ```
+
+- **Potential Bugs**: Add null and empty checks at the beginning of the function; e.g.,  
+  ```cpp
+  if (!data || len == 0) return 0;
+  ```
+
+- **Modern C++ Best Practices**: Use `static_cast` instead of C-style casts for type safety; e.g.,  
+  ```cpp
+  result += static_cast<int>(data[i]);
+  ```
+
+- **Performance Optimizations**: Consider using `std::string_view` for more efficient string handling; e.g.,  
+  ```cpp
+  int calculateSomething(std::string_view data) {
+      int result = 0;
+      for (char c : data) {
+          result += static_cast<int>(c);
+      }
+      return result;
+  }
+  ```
+
+- **General Improvements**: Mark the function as `constexpr` if possible and add `noexcept`; e.g.,  
+  ```cpp
+  constexpr int calculateSomething(std::string_view data) noexcept {
+      int result = 0;
+      for (char c : data) {
+          result += static_cast<int>(c);
+      }
+      return result;
+  }
+  ```
