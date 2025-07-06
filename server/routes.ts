@@ -32,33 +32,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log('n8n response:', JSON.stringify(response.data, null, 2));
       
-      // Handle different response formats from n8n workflow
+      // Handle n8n workflow response
       let prData = response.data;
       
-      // If the response is wrapped in an array, extract it
-      if (Array.isArray(prData) && prData.length > 0 && prData[0].json) {
-        prData = prData.map(item => item.json);
-      }
-      
-      // If it's a single object with json property, extract it
-      if (prData && prData.json && !Array.isArray(prData)) {
-        prData = [prData.json];
-      }
-      
-      // Handle n8n array response directly
-      if (Array.isArray(prData) && prData.length > 0) {
-        // Filter out empty objects and ensure required fields
-        const validPRs = prData.filter(pr => 
-          pr && (pr.number || pr.id) && pr.title && pr.state && (pr.html_url || pr.url)
-        );
-        
-        if (validPRs.length > 0) {
-          console.log(`Found ${validPRs.length} valid PRs from n8n`);
-          return res.json(validPRs);
-        }
-      }
-      
-      // If response indicates workflow started but no data yet
+      // If response indicates workflow started but no data yet, return processing status
       if (prData && prData.message === "Workflow was started") {
         console.log('n8n workflow started, waiting for data...');
         return res.status(202).json({ 
@@ -67,7 +44,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      // If no valid PRs found
+      // Handle direct array response from n8n (this is what your workflow returns)
+      if (Array.isArray(prData) && prData.length > 0) {
+        // Validate PR objects have required fields
+        const validPRs = prData.filter(pr => 
+          pr && pr.number && pr.title && pr.state && pr.html_url
+        );
+        
+        if (validPRs.length > 0) {
+          console.log(`Found ${validPRs.length} valid PRs from n8n workflow`);
+          return res.json(validPRs);
+        }
+      }
+      
+      // If response is wrapped in n8n format, extract it
+      if (Array.isArray(prData) && prData.length > 0 && prData[0].json) {
+        const extractedPRs = prData.map(item => item.json).filter(pr => 
+          pr && pr.number && pr.title && pr.state && pr.html_url
+        );
+        
+        if (extractedPRs.length > 0) {
+          console.log(`Found ${extractedPRs.length} valid PRs from wrapped n8n response`);
+          return res.json(extractedPRs);
+        }
+      }
+      
+      // If no valid PRs found, return empty array
       console.log('No valid PRs found in response, returning empty array');
       return res.json([]);
       
@@ -137,6 +139,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
+
 
   // Get the generated review content
   app.get('/api/review', async (req, res) => {
