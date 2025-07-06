@@ -121,6 +121,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
+      // Handle wrapped PR data (n8n format)
+      if (prData && prData.prs && Array.isArray(prData.prs)) {
+        console.log(`DEBUG: Found wrapped PR data with ${prData.prs.length} PRs - extracting`);
+        prData = prData.prs; // Extract the actual PR array
+      }
+      
       // Handle direct array response from n8n (this is what your workflow returns)
       if (Array.isArray(prData)) {
         console.log(`DEBUG: Received array response with ${prData.length} items`);
@@ -145,6 +151,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log('DEBUG: Empty array received');
         }
       } else {
+        console.log('DEBUG: Empty array received');
+      }
+      
+      // If prData is not an array at this point, check for wrapping formats
+      if (!Array.isArray(prData)) {
         console.log('DEBUG: Response is not an array, checking for wrapped format...');
         
         // If response is wrapped in n8n format, extract it
@@ -216,21 +227,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     const prUrl = `https://api.github.com/repos/${repo}/pulls/${prNumber}`;
     
+    // Create the review webhook payload
+    const reviewPayload = {
+      action: "opened",
+      number: prNumber,
+      pull_request: {
+        url: prUrl,
+        html_url: `https://github.com/${repo}/pull/${prNumber}`,
+        number: prNumber,
+        state: "open",
+        title: "Code Review Request",
+        body: "Automated code review request",
+        head: {
+          sha: "automated-review",
+          ref: "review-branch",
+          repo: {
+            full_name: repo,
+            url: `https://api.github.com/repos/${repo}`
+          }
+        },
+        base: {
+          ref: "main",
+          repo: {
+            full_name: repo,
+            url: `https://api.github.com/repos/${repo}`
+          }
+        }
+      },
+      repository: {
+        full_name: repo,
+        url: `https://api.github.com/repos/${repo}`
+      }
+    };
+    
     try {
-      // Try n8n workflow first
-      await axios.post(
-        `${N8N_BASE_URL}/webhook/github-webhook`,
-        { body: { pull_request: { url: prUrl } } },
+      console.log('DEBUG: Triggering review for PR:', prNumber, 'in repo:', repo);
+      console.log('DEBUG: Review payload:', JSON.stringify(reviewPayload, null, 2));
+      
+      // Use localhost URL for review workflow
+      const reviewResponse = await axios.post(
+        'http://localhost:5678/webhook/github-webhook',
+        reviewPayload,
         { 
           headers: { 
-            'User-Agent': 'n8n-workflow', 
-            'ngrok-skip-browser-warning': 'true',
             'Content-Type': 'application/json'
           },
-          timeout: 5000
+          timeout: 10000
         }
       );
-      res.json({ message: 'Review triggered successfully' });
+      
+      console.log('DEBUG: Review response:', reviewResponse.status, reviewResponse.data);
+      res.json({ message: 'Review triggered successfully', data: reviewResponse.data });
     } catch (error: any) {
       console.error('Error triggering review in n8n:', error.message);
       
