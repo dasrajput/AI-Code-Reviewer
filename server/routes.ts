@@ -10,34 +10,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Get pull requests for a repository
   app.get('/api/prs', async (req, res) => {
+    console.log('=== DEBUG: /api/prs endpoint called ===');
+    console.log('DEBUG: Request query:', req.query);
+    
     const { repo } = req.query;
     
     if (!repo || typeof repo !== 'string') {
+      console.log('DEBUG: Invalid repo parameter:', repo);
       return res.status(400).json({ error: 'Repository parameter is required' });
     }
 
+    console.log(`DEBUG: Valid repo parameter received: ${repo}`);
+    console.log(`DEBUG: N8N_BASE_URL: ${N8N_BASE_URL}`);
+    
+    const requestUrl = `${N8N_BASE_URL}/webhook-test/list-prs?repo=${encodeURIComponent(repo)}`;
+    console.log(`DEBUG: Full request URL: ${requestUrl}`);
+
     try {
-      console.log(`Fetching PRs for repository: ${repo}`);
+      console.log(`DEBUG: Starting axios request to n8n...`);
       
-      const response = await axios.get(
-        `${N8N_BASE_URL}/webhook-test/list-prs?repo=${encodeURIComponent(repo)}`,
-        { 
-          headers: { 
-            'User-Agent': 'n8n-workflow', 
-            'ngrok-skip-browser-warning': 'true' 
-          },
-          timeout: 10000
-        }
-      );
+      const response = await axios.get(requestUrl, { 
+        headers: { 
+          'User-Agent': 'n8n-workflow', 
+          'ngrok-skip-browser-warning': 'true' 
+        },
+        timeout: 10000
+      });
       
-      console.log('n8n response:', JSON.stringify(response.data, null, 2));
+      console.log('DEBUG: Axios request successful');
+      console.log('DEBUG: Response status:', response.status);
+      console.log('DEBUG: Response headers:', response.headers);
+      console.log('DEBUG: Response data type:', typeof response.data);
+      console.log('DEBUG: Response data:', JSON.stringify(response.data, null, 2));
       
       // Handle n8n workflow response
       let prData = response.data;
+      console.log('DEBUG: Processing response data...');
       
       // If response indicates workflow started but no data yet, return processing status
       if (prData && prData.message === "Workflow was started") {
-        console.log('n8n workflow started, waiting for data...');
+        console.log('DEBUG: Workflow started message received');
         return res.status(202).json({ 
           message: 'Workflow started, please try again in a moment',
           status: 'processing'
@@ -45,49 +57,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Handle direct array response from n8n (this is what your workflow returns)
-      if (Array.isArray(prData) && prData.length > 0) {
-        // Validate PR objects have required fields
-        const validPRs = prData.filter(pr => 
-          pr && pr.number && pr.title && pr.state && pr.html_url
-        );
+      if (Array.isArray(prData)) {
+        console.log(`DEBUG: Received array response with ${prData.length} items`);
         
-        if (validPRs.length > 0) {
-          console.log(`Found ${validPRs.length} valid PRs from n8n workflow`);
-          return res.json(validPRs);
+        if (prData.length > 0) {
+          console.log('DEBUG: First item in array:', JSON.stringify(prData[0], null, 2));
+          
+          // Validate PR objects have required fields
+          const validPRs = prData.filter(pr => {
+            const isValid = pr && pr.number && pr.title && pr.state && pr.html_url;
+            console.log(`DEBUG: Validating PR ${pr?.number}: ${isValid ? 'VALID' : 'INVALID'}`, pr);
+            return isValid;
+          });
+          
+          console.log(`DEBUG: Found ${validPRs.length} valid PRs out of ${prData.length} total`);
+          
+          if (validPRs.length > 0) {
+            console.log('DEBUG: Returning valid PRs to client');
+            return res.json(validPRs);
+          }
+        } else {
+          console.log('DEBUG: Empty array received');
         }
-      }
-      
-      // If response is wrapped in n8n format, extract it
-      if (Array.isArray(prData) && prData.length > 0 && prData[0].json) {
-        const extractedPRs = prData.map(item => item.json).filter(pr => 
-          pr && pr.number && pr.title && pr.state && pr.html_url
-        );
+      } else {
+        console.log('DEBUG: Response is not an array, checking for wrapped format...');
         
-        if (extractedPRs.length > 0) {
-          console.log(`Found ${extractedPRs.length} valid PRs from wrapped n8n response`);
-          return res.json(extractedPRs);
+        // If response is wrapped in n8n format, extract it
+        if (Array.isArray(prData) && prData.length > 0 && prData[0].json) {
+          console.log('DEBUG: Found wrapped n8n format, extracting...');
+          const extractedPRs = prData.map(item => item.json).filter(pr => {
+            const isValid = pr && pr.number && pr.title && pr.state && pr.html_url;
+            console.log(`DEBUG: Validating extracted PR ${pr?.number}: ${isValid ? 'VALID' : 'INVALID'}`);
+            return isValid;
+          });
+          
+          if (extractedPRs.length > 0) {
+            console.log(`DEBUG: Found ${extractedPRs.length} valid PRs from wrapped response`);
+            return res.json(extractedPRs);
+          }
         }
       }
       
       // If no valid PRs found, return empty array
-      console.log('No valid PRs found in response, returning empty array');
+      console.log('DEBUG: No valid PRs found, returning empty array');
       return res.json([]);
       
     } catch (error: any) {
-      console.error('Error fetching PRs from n8n:', error.message);
+      console.log('=== DEBUG: Error occurred ===');
+      console.log('DEBUG: Error type:', error.constructor.name);
+      console.log('DEBUG: Error message:', error.message);
+      console.log('DEBUG: Error code:', error.code);
+      console.log('DEBUG: Error response status:', error.response?.status);
+      console.log('DEBUG: Error response data:', error.response?.data);
+      console.log('DEBUG: Full error object:', error);
       
       if (error.response?.status === 404) {
+        console.log('DEBUG: Returning 404 error response');
+        console.log('DEBUG: n8n error response:', error.response?.data);
+        
+        // Check if it's the specific n8n test mode message
+        if (error.response?.data?.message?.includes('not registered')) {
+          return res.status(400).json({ 
+            error: 'n8n webhook not active. Please activate your List_PRs workflow in n8n by clicking "Execute workflow" button.' 
+          });
+        }
+        
         return res.status(400).json({ 
           error: 'n8n webhook not found. Please ensure the List_PRs workflow is active in n8n.' 
         });
       }
       
       if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+        console.log('DEBUG: Returning connection error response');
         return res.status(503).json({ 
           error: 'Cannot connect to n8n service. Please check if n8n is running and accessible.' 
         });
       }
       
+      console.log('DEBUG: Returning generic error response');
       return res.status(500).json({ 
         error: `Failed to fetch PRs: ${error.message}` 
       });

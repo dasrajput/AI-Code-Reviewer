@@ -43,15 +43,45 @@ export default function Home() {
   const { data: pullRequests, isLoading: isLoadingPRs, error: prsError, refetch: refetchPRs } = useQuery<PullRequest[]>({
     queryKey: ['/api/prs', repoName],
     queryFn: async () => {
+      console.log('=== FRONTEND DEBUG: Starting PR fetch ===');
+      console.log('DEBUG: repoName:', repoName);
+      
       if (!repoName.trim()) {
+        console.log('DEBUG: No repo name provided');
         throw new Error("Repository name is required");
       }
-      const response = await fetch(`/api/prs?repo=${encodeURIComponent(repoName.trim())}`);
+      
+      const url = `/api/prs?repo=${encodeURIComponent(repoName.trim())}`;
+      console.log('DEBUG: Request URL:', url);
+      
+      console.log('DEBUG: Making fetch request...');
+      const response = await fetch(url);
+      
+      console.log('DEBUG: Response received');
+      console.log('DEBUG: Response status:', response.status);
+      console.log('DEBUG: Response ok:', response.ok);
+      
       if (!response.ok) {
+        console.log('DEBUG: Response not ok, reading error data...');
         const errorData = await response.json();
+        console.log('DEBUG: Error data:', errorData);
         throw new Error(errorData.error || 'Failed to fetch pull requests');
       }
-      return response.json();
+      
+      console.log('DEBUG: Reading response data...');
+      const data = await response.json();
+      console.log('DEBUG: Response data:', data);
+      console.log('DEBUG: Data type:', typeof data);
+      console.log('DEBUG: Is array:', Array.isArray(data));
+      
+      if (Array.isArray(data)) {
+        console.log(`DEBUG: Array length: ${data.length}`);
+        if (data.length > 0) {
+          console.log('DEBUG: First item:', data[0]);
+        }
+      }
+      
+      return data;
     },
     enabled: false,
   });
@@ -133,7 +163,11 @@ export default function Home() {
   };
 
   const handleFetchPRs = async () => {
+    console.log('=== FRONTEND DEBUG: handleFetchPRs called ===');
+    console.log('DEBUG: Current repoName:', repoName);
+    
     if (!repoName.trim()) {
+      console.log('DEBUG: Empty repo name, showing error toast');
       toast({
         title: "Repository Required",
         description: "Please enter a repository name in the format owner/repository",
@@ -143,6 +177,7 @@ export default function Home() {
     }
 
     if (!/^[\w\-\.]+\/[\w\-\.]+$/.test(repoName.trim())) {
+      console.log('DEBUG: Invalid repo format, showing error toast');
       toast({
         title: "Invalid Repository Format",
         description: "Repository should be in format: owner/repository-name",
@@ -151,12 +186,17 @@ export default function Home() {
       return;
     }
 
+    console.log('DEBUG: Repo validation passed, starting fetch...');
+
     // Try fetching PRs
     try {
+      console.log('DEBUG: Calling refetchPRs...');
       const result = await refetchPRs();
+      console.log('DEBUG: refetchPRs result:', result);
       
       // If n8n workflow is still processing, wait and retry
       if (result.data && typeof result.data === 'object' && 'status' in result.data && result.data.status === 'processing') {
+        console.log('DEBUG: Workflow processing, setting up retry...');
         toast({
           title: "Workflow Starting",
           description: "n8n workflow is processing. Retrying in 3 seconds...",
@@ -164,10 +204,14 @@ export default function Home() {
         
         // Retry after 3 seconds
         setTimeout(() => {
+          console.log('DEBUG: Retrying after 3 seconds...');
           refetchPRs();
         }, 3000);
+      } else {
+        console.log('DEBUG: Fetch completed successfully');
       }
     } catch (error) {
+      console.log('DEBUG: Error in handleFetchPRs:', error);
       console.error('Error fetching PRs:', error);
     }
   };
@@ -363,10 +407,11 @@ export default function Home() {
             <AlertDescription className="text-red-800">
               <div className="font-medium">Failed to fetch pull requests</div>
               <div className="text-sm mt-1">
-                {prsError.message.includes('n8n webhook not found') ? 'n8n workflow is not active. Please start the List_PRs workflow in your n8n instance.' :
+                {prsError.message.includes('n8n webhook not active') ? 'n8n workflow is not active. Please activate your List_PRs workflow in n8n by clicking the "Execute workflow" button.' :
+                 prsError.message.includes('n8n webhook not found') ? 'n8n workflow is not active. Please start the List_PRs workflow in your n8n instance.' :
                  prsError.message.includes('404') ? 'Repository not found. Please check the repository name.' :
                  prsError.message.includes('403') ? 'Rate limit exceeded. Try adding a GitHub token.' :
-                 `Network error: ${prsError.message}`}
+                 `Error: ${prsError.message}`}
               </div>
             </AlertDescription>
           </Alert>
