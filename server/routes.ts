@@ -8,6 +8,41 @@ import path from "path";
 export async function registerRoutes(app: Express): Promise<Server> {
   const N8N_BASE_URL = "https://6f36-2409-40c2-11a-446d-688f-c19d-502a-fee4.ngrok-free.app";
 
+  // Debug endpoint to test n8n directly
+  app.get('/api/debug/n8n', async (req, res) => {
+    const { repo } = req.query;
+    if (!repo) {
+      return res.status(400).json({ error: 'Repository parameter required' });
+    }
+    
+    const testUrl = `${N8N_BASE_URL}/webhook/list-prs?repo=${encodeURIComponent(repo as string)}`;
+    console.log('DEBUG: Testing n8n URL:', testUrl);
+    
+    try {
+      const response = await axios.get(testUrl, { 
+        headers: { 
+          'User-Agent': 'n8n-workflow', 
+          'ngrok-skip-browser-warning': 'true' 
+        },
+        timeout: 10000
+      });
+      
+      res.json({
+        status: response.status,
+        headers: response.headers,
+        data: response.data,
+        dataType: typeof response.data,
+        isArray: Array.isArray(response.data)
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        error: error.message,
+        status: error.response?.status,
+        data: error.response?.data
+      });
+    }
+  });
+
   // Get pull requests for a repository
   app.get('/api/prs', async (req, res) => {
     console.log('=== DEBUG: /api/prs endpoint called ===');
@@ -50,10 +85,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // If response indicates workflow started but no data yet, return processing status
       if (prData && prData.message === "Workflow was started") {
         console.log('DEBUG: Workflow started message received');
-        return res.status(202).json({ 
-          message: 'n8n workflow is activating. Click the button again in a few seconds to fetch PRs.',
-          status: 'processing'
-        });
+        console.log('DEBUG: n8n workflow is in test mode, trying to fetch PR data directly...');
+        
+        // Try to get actual PR data by making a second request after a brief delay
+        try {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          const retryResponse = await axios.get(requestUrl, { 
+            headers: { 
+              'User-Agent': 'n8n-workflow', 
+              'ngrok-skip-browser-warning': 'true' 
+            },
+            timeout: 5000
+          });
+          
+          console.log('DEBUG: Retry response status:', retryResponse.status);
+          console.log('DEBUG: Retry response data:', JSON.stringify(retryResponse.data, null, 2));
+          console.log('DEBUG: Retry response type:', typeof retryResponse.data);
+          console.log('DEBUG: Is retry response an array?', Array.isArray(retryResponse.data));
+          
+          if (Array.isArray(retryResponse.data) && retryResponse.data.length > 0) {
+            console.log('DEBUG: Found PR data on retry!');
+            prData = retryResponse.data;
+          } else {
+            console.log('DEBUG: Still no PR data on retry, returning error about test mode');
+            return res.status(400).json({ 
+              error: 'Your n8n workflow is in test mode and not returning PR data. Please configure your List_PRs workflow to return actual GitHub PR data instead of just "Workflow was started".'
+            });
+          }
+        } catch (retryError: any) {
+          console.log('DEBUG: Retry request failed:', retryError.message);
+          return res.status(400).json({ 
+            error: 'Your n8n workflow is in test mode and not returning PR data. Please configure your List_PRs workflow to return actual GitHub PR data instead of just "Workflow was started".',
+            hint: 'Check your n8n workflow configuration to ensure it fetches and returns GitHub PR data.'
+          });
+        }
       }
       
       // Handle direct array response from n8n (this is what your workflow returns)

@@ -1,0 +1,51 @@
+> rest-express@1.0.0 dev
+2:18:05 PM [express] serving on port 5000s
+Browserslist: browsers data (caniuse-lite) is 9 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+=== DEBUG: /api/prs endpoint called ===
+DEBUG: Request query: { repo: 'wsvn53/scrcpy-mobile' }
+DEBUG: Valid repo parameter received: wsvn53/scrcpy-mobile
+DEBUG: N8N_BASE_URL: https://6f36-2409-40c2-11a-446d-688f-c19d-502a-fee4.ngrok-free.app
+DEBUG: Full request URL: https://6f36-2409-40c2-11a-446d-688f-c19d-502a-fee4.ngrok-free.app/webhook/list-prs?repo=wsvn53%2Fscrcpy-mobile
+DEBUG: Starting axios request to n8n...
+DEBUG: Axios request successful
+DEBUG: Response status: 200
+DEBUG: Response headers: Object [AxiosHeaders] {
+  'content-length': '34',
+  'content-type': 'application/json; charset=utf-8',
+  date: 'Sun, 06 Jul 2025 14:18:44 GMT',
+  etag: 'W/"22-6OS7cK0FzqnV2NeDHdOSGS1bVUs"',
+  'ngrok-agent-ips': '2409:40c2:11a:446d:d1ce:18d:7605:31b7',
+  vary: 'Accept-Encoding'
+}
+DEBUG: Response data type: object
+DEBUG: Response data: {
+  "message": "Workflow was started"
+}
+DEBUG: Processing response data...
+DEBUG: Workflow started message received
+2:18:46 PM [express] GET /api/prs 202 in 684ms :: {"message":"n8n workflow is activating. Click the …
+=== DEBUG: /api/prs endpoint called ===
+DEBUG: Request query: { repo: 'wsvn53/scrcpy-mobile' }
+DEBUG: Valid repo parameter received: wsvn53/scrcpy-mobile
+DEBUG: N8N_BASE_URL: https://6f36-2409-40c2-11a-446d-688f-c19d-502a-fee4.ngrok-free.app
+DEBUG: Full request URL: https://6f36-2409-40c2-11a-446d-688f-c19d-502a-fee4.ngrok-free.app/webhook/list-prs?repo=wsvn53%2Fscrcpy-mobile
+DEBUG: Starting axios request to n8n...
+DEBUG: Axios request successful
+DEBUG: Response status: 200
+DEBUG: Response headers: Object [AxiosHeaders] {
+  'content-length': '34',
+  'content-type': 'application/json; charset=utf-8',
+  date: 'Sun, 06 Jul 2025 14:18:48 GMT',
+  etag: 'W/"22-6OS7cK0FzqnV2NeDHdOSGS1bVUs"',
+  'ngrok-agent-ips': '2409:40c2:11a:446d:d1ce:18d:7605:31b7',
+  vary: 'Accept-Encoding'
+}
+DEBUG: Response data type: object
+DEBUG: Response data: {
+  "message": "Workflow was started"
+}
+DEBUG: Processing response data...
+DEBUG: Workflow started message received
+2:18:49 PM [express] GET /api/prs 202 in 399ms :: {"message":"n8n workflow is activating. Click the …

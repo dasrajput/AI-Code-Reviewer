@@ -409,6 +409,7 @@ export default function Home() {
               <div className="text-sm mt-1">
                 {prsError.message.includes('n8n webhook not active') ? 'n8n workflow is not active. Please activate your List_PRs workflow in n8n by clicking the "Execute workflow" button.' :
                  prsError.message.includes('n8n webhook not found') ? 'n8n workflow is not active. Please start the List_PRs workflow in your n8n instance.' :
+                 prsError.message.includes('test mode') ? 'Your n8n workflow is in test mode and not returning PR data. Please configure your List_PRs workflow to return actual GitHub PR data.' :
                  prsError.message.includes('404') ? 'Repository not found. Please check the repository name.' :
                  prsError.message.includes('403') ? 'Rate limit exceeded. Try adding a GitHub token.' :
                  `Error: ${prsError.message}`}
