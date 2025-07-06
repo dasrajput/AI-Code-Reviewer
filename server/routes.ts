@@ -17,7 +17,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     try {
-      // Try n8n workflow first
+      console.log(`Fetching PRs for repository: ${repo}`);
+      
       const response = await axios.get(
         `${N8N_BASE_URL}/webhook-test/list-prs?repo=${encodeURIComponent(repo)}`,
         { 
@@ -25,57 +26,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
             'User-Agent': 'n8n-workflow', 
             'ngrok-skip-browser-warning': 'true' 
           },
-          timeout: 5000
+          timeout: 10000
         }
       );
       
-      // Check if response is valid PR data (array of PR objects)
-      if (Array.isArray(response.data) && response.data.length > 0 && response.data[0].number) {
-        return res.json(response.data);
-      } 
-      // If n8n returns workflow status instead of data, fall back to demo
-      else if (response.data && response.data.message) {
-        console.log('n8n workflow started but no PR data returned, using demo data');
-        throw new Error('n8n workflow started but no PR data available');
-      } else {
-        throw new Error('Invalid response format from n8n');
+      console.log('n8n response:', JSON.stringify(response.data, null, 2));
+      
+      // Handle different response formats from n8n workflow
+      let prData = response.data;
+      
+      // If the response is wrapped in an array, extract it
+      if (Array.isArray(prData) && prData.length > 0 && prData[0].json) {
+        prData = prData.map(item => item.json);
       }
-    } catch (error: any) {
-      console.log('n8n webhook not available, using demo data:', error.message);
       
-      // Return demo data when n8n is not available
-      const demoData = [
-        {
-          number: 5318,
-          title: "LibURL: Convert to scalar string before URL parsing",
-          state: "open",
-          url: `https://api.github.com/repos/${repo}/pulls/5318`,
-          html_url: `https://github.com/${repo}/pull/5318`
-        },
-        {
-          number: 5317,
-          title: "Add support for modern CSS grid layouts",
-          state: "open",
-          url: `https://api.github.com/repos/${repo}/pulls/5317`,
-          html_url: `https://github.com/${repo}/pull/5317`
-        },
-        {
-          number: 5316,
-          title: "Fix memory leak in WebGL context management",
-          state: "merged",
-          url: `https://api.github.com/repos/${repo}/pulls/5316`,
-          html_url: `https://github.com/${repo}/pull/5316`
-        },
-        {
-          number: 5315,
-          title: "Implement dark mode support for developer tools",
-          state: "closed",
-          url: `https://api.github.com/repos/${repo}/pulls/5315`,
-          html_url: `https://github.com/${repo}/pull/5315`
+      // If it's a single object with json property, extract it
+      if (prData && prData.json && !Array.isArray(prData)) {
+        prData = [prData.json];
+      }
+      
+      // Handle n8n array response directly
+      if (Array.isArray(prData) && prData.length > 0) {
+        // Filter out empty objects and ensure required fields
+        const validPRs = prData.filter(pr => 
+          pr && (pr.number || pr.id) && pr.title && pr.state && (pr.html_url || pr.url)
+        );
+        
+        if (validPRs.length > 0) {
+          console.log(`Found ${validPRs.length} valid PRs from n8n`);
+          return res.json(validPRs);
         }
-      ];
+      }
       
-      return res.json(demoData);
+      // If response indicates workflow started but no data yet
+      if (prData && prData.message === "Workflow was started") {
+        console.log('n8n workflow started, waiting for data...');
+        return res.status(202).json({ 
+          message: 'Workflow started, please try again in a moment',
+          status: 'processing'
+        });
+      }
+      
+      // If no valid PRs found
+      console.log('No valid PRs found in response, returning empty array');
+      return res.json([]);
+      
+    } catch (error: any) {
+      console.error('Error fetching PRs from n8n:', error.message);
+      
+      if (error.response?.status === 404) {
+        return res.status(400).json({ 
+          error: 'n8n webhook not found. Please ensure the List_PRs workflow is active in n8n.' 
+        });
+      }
+      
+      if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+        return res.status(503).json({ 
+          error: 'Cannot connect to n8n service. Please check if n8n is running and accessible.' 
+        });
+      }
+      
+      return res.status(500).json({ 
+        error: `Failed to fetch PRs: ${error.message}` 
+      });
     }
   });
 
@@ -105,55 +118,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
       res.json({ message: 'Review triggered successfully' });
     } catch (error: any) {
-      console.error('n8n webhook not available, generating demo review:', error.message);
+      console.error('Error triggering review in n8n:', error.message);
       
-      // Generate demo review when n8n is not available
-      const demoReview = `
-# AI Code Review for PR #${prNumber}
-
-## Summary
-This pull request has been analyzed by our AI code review assistant. The review covers code quality, potential issues, and improvement suggestions.
-
-## Analysis
-
-### Positive Aspects
-✅ **Code Structure**: The code follows good architectural patterns and is well-organized
-✅ **Documentation**: Functions and methods are properly documented
-✅ **Error Handling**: Appropriate error handling mechanisms are in place
-✅ **Testing**: Adequate test coverage for new functionality
-
-### Areas for Improvement
-⚠️ **Performance**: Consider optimizing the algorithm in lines 45-67 for better time complexity
-⚠️ **Memory Usage**: Potential memory leak in the event listener - ensure proper cleanup
-⚠️ **Type Safety**: Add more specific type annotations for better IDE support
-
-### Security Considerations
-🔒 **Input Validation**: All user inputs are properly sanitized
-🔒 **Authentication**: Access controls are correctly implemented
-🔒 **Data Protection**: Sensitive data handling follows best practices
-
-### Recommendations
-1. **Refactor** the main processing function to reduce cyclomatic complexity
-2. **Add** more comprehensive unit tests for edge cases
-3. **Consider** implementing caching for frequently accessed data
-4. **Update** documentation to reflect recent API changes
-
-## Overall Score: 8.5/10
-
-This is a solid contribution that enhances the codebase. The suggested improvements are minor and don't block the merge.
-
----
-*Generated by AI Code Review Assistant*
-*Repository: ${repo}*
-*PR Number: #${prNumber}*
-*Generated at: ${new Date().toISOString()}*
-      `;
-
-      // Write demo review to file
-      const reviewPath = path.join(process.cwd(), 'review.txt');
-      await fs.writeFile(reviewPath, demoReview.trim(), 'utf8');
+      if (error.response?.status === 404) {
+        return res.status(400).json({ 
+          error: 'n8n webhook not found. Please ensure the review workflow is active in n8n.' 
+        });
+      }
       
-      res.json({ message: 'Review triggered successfully (demo mode)' });
+      if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+        return res.status(503).json({ 
+          error: 'Cannot connect to n8n service. Please check if n8n is running and accessible.' 
+        });
+      }
+      
+      return res.status(500).json({ 
+        error: `Failed to trigger review: ${error.message}` 
+      });
     }
   });
 

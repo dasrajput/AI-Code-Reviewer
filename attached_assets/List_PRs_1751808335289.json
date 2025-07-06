@@ -1,0 +1,176 @@
+{
+  "name": "List_PRs",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c4d5e6f7-g8h9-4i0j-8k9l-0m1n2o3p4q5",
+              "name": "repo",
+              "value": "={{ $node['List PRs Webhook'].json.query.repo }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Set Repo",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        140,
+        -60
+      ],
+      "id": "58b594b6-3bff-41b5-9f30-0032d4578f39"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $node['Set Repo'].json.repo }}/pulls?state=open",
+        "options": {},
+        "headerParametersUi": {
+          "parameter": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-workflow"
+            }
+          ]
+        }
+      },
+      "name": "Fetch PRs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        320,
+        -40
+      ],
+      "id": "8dc328ec-a64d-40ea-bb1c-5c802726f1da"
+    },
+    {
+      "parameters": {
+        "jsCode": "const prs = $node[\"Normalize PRs\"].json.prs;\nconst formatted = prs.map(pr => ({\n  json: {\n    number: pr.number || 0,\n    title: pr.title || 'No title',\n    state: pr.state || 'unknown',\n    url: pr.url || '',\n    html_url: pr.html_url || ''\n  }\n}));\nreturn formatted.length > 0 ? formatted : [{ json: {} }];"
+      },
+      "name": "Format PRs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        180
+      ],
+      "id": "0217269d-8876-4bab-924c-79f51cef8193"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        540,
+        -20
+      ],
+      "id": "9c3890bf-37ee-4c8d-a8ac-b425ea0fd833"
+    },
+    {
+      "parameters": {
+        "path": "list-prs",
+        "options": {}
+      },
+      "name": "List PRs Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        120,
+        120
+      ],
+      "id": "7cdf1b9a-e07c-4b05-be5c-069d91e41554",
+      "webhookId": "b2c3d4e5-f6g7-4h8i-9j0k-1l2m3n4o5p6"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $node[\"Fetch PRs\"].json;\nlet prs = [];\ntry {\n  if (Array.isArray(data)) {\n    prs = data;\n  } else if (typeof data === 'string') {\n    prs = JSON.parse(data);\n  } else if (data && Array.isArray(data[0])) {\n    prs = data[0];\n  }\n} catch (e) {\n  prs = [];\n}\nreturn [{ json: { prs } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        340,
+        180
+      ],
+      "id": "cc4a9bf4-751f-4a4a-a204-2eaae77e550d",
+      "name": "Normalize PRs"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Set Repo": {
+      "main": [
+        [
+          {
+            "node": "Fetch PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch PRs": {
+      "main": [
+        [
+          {
+            "node": "Normalize PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format PRs": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List PRs Webhook": {
+      "main": [
+        [
+          {
+            "node": "Set Repo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize PRs": {
+      "main": [
+        [
+          {
+            "node": "Format PRs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "e4723aa7-47a7-482d-a0e5-c967d1d77574",
+  "meta": {
+    "instanceId": "373c84b162345ff1840d24c9fc114ca43a595a459fff1d0201d8e73e88f79eee"
+  },
+  "id": "e6DrsR3XTklTAkO7",
+  "tags": []
+}

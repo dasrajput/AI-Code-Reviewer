@@ -117,6 +117,7 @@ The application follows a full-stack TypeScript architecture with clear separati
 ```
 Changelog:
 - July 06, 2025. Initial setup
+- July 06, 2025 (PM). Connected to real n8n workflow - removed demo data fallbacks, implemented proper n8n response handling, added workflow status notifications
 ```
 
 ## User Preferences

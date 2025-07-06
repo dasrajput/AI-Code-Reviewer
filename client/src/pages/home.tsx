@@ -132,7 +132,7 @@ export default function Home() {
     }, 5000);
   };
 
-  const handleFetchPRs = () => {
+  const handleFetchPRs = async () => {
     if (!repoName.trim()) {
       toast({
         title: "Repository Required",
@@ -151,7 +151,25 @@ export default function Home() {
       return;
     }
 
-    refetchPRs();
+    // Try fetching PRs
+    try {
+      const result = await refetchPRs();
+      
+      // If n8n workflow is still processing, wait and retry
+      if (result.data && typeof result.data === 'object' && 'status' in result.data && result.data.status === 'processing') {
+        toast({
+          title: "Workflow Starting",
+          description: "n8n workflow is processing. Retrying in 3 seconds...",
+        });
+        
+        // Retry after 3 seconds
+        setTimeout(() => {
+          refetchPRs();
+        }, 3000);
+      }
+    } catch (error) {
+      console.error('Error fetching PRs:', error);
+    }
   };
 
   const handleGenerateReview = (prNumber: number) => {
@@ -246,6 +264,17 @@ export default function Home() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* n8n Status Info */}
+        <Alert className="mb-6 border-blue-200 bg-blue-50">
+          <Info className="h-4 w-4 text-blue-600" />
+          <AlertDescription className="text-blue-800">
+            <div className="font-medium">n8n Integration Active</div>
+            <div className="text-sm mt-1">
+              This app connects to your n8n workflow. Make sure your List_PRs workflow is active in n8n to fetch real GitHub PR data.
+            </div>
+          </AlertDescription>
+        </Alert>
+
         {/* Repository Input */}
         <Card className="mb-8">
           <CardHeader>
@@ -334,7 +363,8 @@ export default function Home() {
             <AlertDescription className="text-red-800">
               <div className="font-medium">Failed to fetch pull requests</div>
               <div className="text-sm mt-1">
-                {prsError.message.includes('404') ? 'Repository not found. Please check the repository name.' :
+                {prsError.message.includes('n8n webhook not found') ? 'n8n workflow is not active. Please start the List_PRs workflow in your n8n instance.' :
+                 prsError.message.includes('404') ? 'Repository not found. Please check the repository name.' :
                  prsError.message.includes('403') ? 'Rate limit exceeded. Try adding a GitHub token.' :
                  `Network error: ${prsError.message}`}
               </div>
