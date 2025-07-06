@@ -23,7 +23,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.log(`DEBUG: Valid repo parameter received: ${repo}`);
     console.log(`DEBUG: N8N_BASE_URL: ${N8N_BASE_URL}`);
     
-    const requestUrl = `${N8N_BASE_URL}/webhook-test/list-prs?repo=${encodeURIComponent(repo)}`;
+    const requestUrl = `${N8N_BASE_URL}/webhook/list-prs?repo=${encodeURIComponent(repo)}`;
     console.log(`DEBUG: Full request URL: ${requestUrl}`);
 
     try {
@@ -51,7 +51,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (prData && prData.message === "Workflow was started") {
         console.log('DEBUG: Workflow started message received');
         return res.status(202).json({ 
-          message: 'Workflow started, please try again in a moment',
+          message: 'n8n workflow is activating. Click the button again in a few seconds to fetch PRs.',
           status: 'processing'
         });
       }
@@ -154,7 +154,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // Try n8n workflow first
       await axios.post(
-        `${N8N_BASE_URL}/webhook-test/github-webhook`,
+        `${N8N_BASE_URL}/webhook/github-webhook`,
         { body: { pull_request: { url: prUrl } } },
         { 
           headers: { 
