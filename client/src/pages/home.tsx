@@ -42,6 +42,17 @@ export default function Home() {
   // Fetch pull requests
   const { data: pullRequests, isLoading: isLoadingPRs, error: prsError, refetch: refetchPRs } = useQuery<PullRequest[]>({
     queryKey: ['/api/prs', repoName],
+    queryFn: async () => {
+      if (!repoName.trim()) {
+        throw new Error("Repository name is required");
+      }
+      const response = await fetch(`/api/prs?repo=${encodeURIComponent(repoName.trim())}`);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch pull requests');
+      }
+      return response.json();
+    },
     enabled: false,
   });
 
