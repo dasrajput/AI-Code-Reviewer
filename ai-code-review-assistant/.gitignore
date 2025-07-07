@@ -7,7 +7,7 @@ __pycache__/
 .Python
 *.egg-info/
 *.egg
-config.py
+
 
 # Docker
 *.dockerignore
