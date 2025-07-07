@@ -1,0 +1,281 @@
+{
+  "name": "PR_Detection",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "github-webhook",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "d77d37f9-d4d2-493b-9c5c-418d5e1c4db5",
+      "webhookId": "5fed025e-d7c7-4198-aa14-69d254dc346d"
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "={{$node[\"Set\"].json[\"test_url\"] + \"/files\"}}",
+        "options": {},
+        "headerParametersUi": {
+          "parameter": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-workflow"
+            },
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            }
+          ]
+        }
+      },
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        480,
+        -80
+      ],
+      "id": "a3ad364f-520e-4ce2-b4bc-03556945a3ec",
+      "alwaysOutputData": false,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "HuI9UaDw4UGJ8gUs",
+          "name": "Authentication"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "900e4341-cb3b-4452-bb53-d6359dec3cf4",
+              "name": "debug",
+              "value": "={{$node[\"Webhook\"].json}}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        260,
+        60
+      ],
+      "id": "c98a1367-93fd-4291-8106-5a5f3278780c",
+      "name": "Debug Input"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c875a186-65f0-4af2-a405-c5cd0d1d691d",
+              "name": "test_url",
+              "value": "={{$node[\"Debug Input\"].json[\"debug\"][\"body\"][\"pull_request\"][\"url\"]}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        -100
+      ],
+      "id": "669d4eca-2ec0-4370-ad59-9706f46e6f56",
+      "name": "Set"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "/home/node/.n8n/nodes/logs/pr_logs.json",
+        "options": {
+          "append": false
+        }
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        720,
+        180
+      ],
+      "id": "dd1e3737-972f-43be-b2a7-bc9b23db59db",
+      "name": "Read/Write Files from Disk"
+    },
+    {
+      "parameters": {
+        "operation": "toJson",
+        "binaryPropertyName": "=data",
+        "options": {
+          "format": true,
+          "encoding": "utf8",
+          "fileName": "pr_logs.json"
+        }
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        740,
+        -40
+      ],
+      "id": "ce1df094-790c-44d2-a2d2-4d57d1160781",
+      "name": "Convert to File"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get HTTP Request output\nlet files = $node[\"HTTP Request\"].json;\n// Unwrap extra array if present\nif (Array.isArray(files[0])) files = files[0];\n// Transform into desired format\nconst logs = files.map(file => ({\n  file: file.filename,\n  raw_url: file.raw_url,\n  suggestion: \"Sample review\",\n  timestamp: new Date().toISOString()\n}));\n// Return as n8n items\nreturn [{\n  json: {\n    output: logs\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        140
+      ],
+      "id": "e23b057f-7b2c-4531-99c2-3a1e30522d8f",
+      "name": "Transform JSON"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        960,
+        -20
+      ],
+      "id": "d1d75522-60c5-4c49-b3ce-09688ef904d4",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "operation": "fromJson",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        940,
+        180
+      ],
+      "id": "66c0f765-1c6c-4845-a589-36cda5f020c3",
+      "name": "Extract from File"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Debug Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Transform JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Debug Input": {
+      "main": [
+        [
+          {
+            "node": "Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform JSON": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "cf6dc1b7-f137-4855-853c-460b178eb3e9",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "373c84b162345ff1840d24c9fc114ca43a595a459fff1d0201d8e73e88f79eee"
+  },
+  "id": "t543t0lBO4LktFhy",
+  "tags": []
+}

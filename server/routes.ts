@@ -6,8 +6,7 @@ import { promises as fs } from "fs";
 import path from "path";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  const N8N_BASE_URL =
-    "https://6f36-2409-40c2-11a-446d-688f-c19d-502a-fee4.ngrok-free.app";
+  const N8N_BASE_URL = "http://localhost:5678"; // n8n runs on localhost:5678
 
   // Debug endpoint to test n8n directly
   app.get("/api/debug/n8n", async (req, res) => {
@@ -272,110 +271,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .json({ error: "Repository and PR number are required" });
     }
 
-    const prUrl = `https://api.github.com/repos/${repo}/pulls/${prNumber}`;
-
-    // Create the review webhook payload
-    const reviewPayload = {
-      action: "opened",
-      number: prNumber,
-      pull_request: {
-        url: prUrl,
-        html_url: `https://github.com/${repo}/pull/${prNumber}`,
-        number: prNumber,
-        state: "open",
-        title: "Code Review Request",
-        body: "Automated code review request",
-        head: {
-          sha: "automated-review",
-          ref: "review-branch",
-          repo: {
-            full_name: repo,
-            url: `https://api.github.com/repos/${repo}`,
-          },
-        },
-        base: {
-          ref: "main",
-          repo: {
-            full_name: repo,
-            url: `https://api.github.com/repos/${repo}`,
-          },
-        },
-      },
-      repository: {
-        full_name: repo,
-        url: `https://api.github.com/repos/${repo}`,
-      },
-    };
-
     try {
-      console.log(
-        "DEBUG: Triggering review for PR:",
-        prNumber,
-        "in repo:",
-        repo,
-      );
-      console.log(
-        "DEBUG: Review payload:", 
-        JSON.stringify(reviewPayload, null, 2),
-      );
-
-      // Use localhost URL for review workflow
-      const reviewResponse = await axios.post(
-        "https://6f36-2409-40c2-11a-446d-688f-c19d-502a-fee4.ngrok-free.app/webhook/github-webhook",
-        reviewPayload,
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-          timeout: 10000,
+      // 1. Get the list of files for the PR from GitHub API
+      const filesUrl = `https://api.github.com/repos/${repo}/pulls/${prNumber}/files`;
+      const filesResponse = await axios.get(filesUrl, {
+        headers: {
+          // It's better to use an environment variable for the token
+          // but for this case we will use the one from the config
+          Authorization: `token ${process.env.GITHUB_TOKEN}`,
+          Accept: 'application/vnd.github.v3+json',
         },
+      });
+
+      const files = filesResponse.data.map((file: any) => ({
+        file: file.filename,
+        raw_url: file.raw_url,
+      }));
+
+      // 2. Call the Python AI agent to get the review
+      const reviewResponse = await axios.post("http://localhost:8000/review", {
+        files,
+      });
+
+      const reviewContentArray = reviewResponse.data.reviews;
+      console.log("DEBUG: reviewContentArray type:", typeof reviewContentArray);
+      console.log("DEBUG: reviewContentArray content:", JSON.stringify(reviewContentArray, null, 2));
+      const reviewContent = reviewContentArray.map((r: any) => `=== Review for ${r.file} ===\n${r.review}`).join('\n\n');
+
+      // Print the review to server debug output
+      console.log(`Generated Review for PR ${prNumber}:
+`, reviewContent);
+
+      // Store the review in a file
+      const reviewFileName = `review_${prNumber}.txt`;
+      const reviewFilePath = path.join(
+        process.cwd(),
+        "ai-code-review-assistant",
+        "src",
+        reviewFileName,
       );
 
-      console.log(
-        "DEBUG: Review response:",
-        reviewResponse.status,
-        reviewResponse.data,
-      );
-      res.json({
-        message: "Review triggered successfully",
-        data: reviewResponse.data,
-      });
+      // Ensure the directory exists
+      await fs.mkdir(path.dirname(reviewFilePath), { recursive: true });
+      await fs.writeFile(reviewFilePath, reviewContent);
+      console.log(`Review for PR ${prNumber} saved to ${reviewFilePath}`);
+
+      // 3. Return the generated review directly to the client
+      res.json({ message: "Review generated successfully", review: reviewContent });
     } catch (error: any) {
-      console.error("Error triggering review in n8n:", error.message);
-
-      if (error.response?.status === 404) {
-        return res.status(400).json({
-          error:
-            "n8n webhook not found. Please ensure the review workflow is active in n8n.",
-        });
-      }
-
-      if (error.code === "ECONNREFUSED" || error.code === "ENOTFOUND") {
-        return res.status(503).json({
-          error:
-            "Cannot connect to n8n service. Please check if n8n is running and accessible.",
-        });
-      }
-
-      return res.status(500).json({
-        error: `Failed to trigger review: ${error.message}`,
-      });
+      console.error("Error triggering review:", error.message);
+      res.status(500).json({ error: `Failed to trigger review: ${error.message}` });
     }
   });
 
   // Get the generated review content
   app.get("/api/review", async (req, res) => {
     try {
-      const reviewPath = path.join(process.cwd(), "review.txt");
-      const review = await fs.readFile(reviewPath, "utf8");
-      res.json({ review: review.trim() });
-    } catch (error: any) {
-      if (error.code === "ENOENT") {
-        res.status(404).json({ error: "Review not found" });
+      const review = await storage.getItem("review");
+      if (review) {
+        res.json({ review });
       } else {
-        console.error("Error reading review:", error.message);
-        res.status(500).json({ error: "Failed to read review file" });
+        res.status(404).json({ error: "Review not found" });
       }
+    } catch (error: any) {
+      console.error("Error reading review:", error.message);
+      res.status(500).json({ error: "Failed to read review file" });
     }
   });
 

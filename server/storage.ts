@@ -3,10 +3,14 @@ import { users, type User, type InsertUser } from "@shared/schema";
 // modify the interface with any CRUD methods
 // you might need
 
+let reviewCache: any = null;
+
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  setItem(key: string, value: any): Promise<void>;
+  getItem(key: string): Promise<any>;
 }
 
 export class MemStorage implements IStorage {
@@ -33,6 +37,19 @@ export class MemStorage implements IStorage {
     const user: User = { ...insertUser, id };
     this.users.set(id, user);
     return user;
+  }
+
+  async setItem(key: string, value: any): Promise<void> {
+    if (key === 'review') {
+      reviewCache = value;
+    }
+  }
+
+  async getItem(key: string): Promise<any> {
+    if (key === 'review') {
+      return reviewCache;
+    }
+    return null;
   }
 }
 

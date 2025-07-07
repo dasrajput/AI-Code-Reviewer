@@ -71,7 +71,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        540,
+        900,
         -20
       ],
       "id": "9c3890bf-37ee-4c8d-a8ac-b425ea0fd833"
@@ -79,14 +79,15 @@
     {
       "parameters": {
         "path": "list-prs",
+        "responseMode": "lastNode",
         "options": {}
       },
       "name": "List PRs Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
       "position": [
-        120,
-        120
+        -40,
+        40
       ],
       "id": "7cdf1b9a-e07c-4b05-be5c-069d91e41554",
       "webhookId": "b2c3d4e5-f6g7-4h8i-9j0k-1l2m3n4o5p6"
@@ -103,6 +104,19 @@
       ],
       "id": "cc4a9bf4-751f-4a4a-a204-2eaae77e550d",
       "name": "Normalize PRs"
+    },
+    {
+      "parameters": {
+        "jsCode": "// This pulls all JSON data from the previous node (Format PRs)\nreturn [{\n  json: {\n    prs: $items().map(item => item.json)\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        180
+      ],
+      "id": "e3cd879a-62fd-49a7-8447-a3ea6660a6a9",
+      "name": "Code"
     }
   ],
   "pinData": {},
@@ -133,7 +147,7 @@
       "main": [
         [
           {
-            "node": "Respond to Webhook",
+            "node": "Code",
             "type": "main",
             "index": 0
           }
@@ -161,13 +175,25 @@
           }
         ]
       ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner"
   },
-  "versionId": "e4723aa7-47a7-482d-a0e5-c967d1d77574",
+  "versionId": "ef2d48f4-940d-4f1a-9119-434220fabfbd",
   "meta": {
     "instanceId": "373c84b162345ff1840d24c9fc114ca43a595a459fff1d0201d8e73e88f79eee"
   },
