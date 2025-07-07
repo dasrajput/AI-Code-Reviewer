@@ -13,11 +13,11 @@ This project provides an AI-powered code review assistant with a web-based user 
 
 #### Home Page
 
-![Home Page](screenshots/home.jpg)
+![Home Page](Screenshots/home.jpg)
 
 #### Review Section
 
-![Review Section](screenshots/review.jpg)
+![Review Section](Screenshots/review.jpg)
 
 ## Project Structure
 
