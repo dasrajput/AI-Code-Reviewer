@@ -3,3 +3,7 @@ streamlit
 pytest
 pillow
 python-dotenv
+fastapi
+uvicorn
+requests
+together

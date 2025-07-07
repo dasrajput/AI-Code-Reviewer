@@ -9,6 +9,16 @@ This project provides an AI-powered code review assistant with a web-based user 
 - Display generated reviews in a structured, readable format.
 - Save generated reviews to local files.
 
+### Screenshots
+
+#### Home Page
+
+![Home Page](screenshots/home.jpg)
+
+#### Review Section
+
+![Review Section](screenshots/review.jpg)
+
 ## Project Structure
 
 - `client/`: Contains the React frontend application.
